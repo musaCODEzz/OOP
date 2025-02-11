@@ -32,6 +32,9 @@ class DepositTransaction(Transaction):
     def revert(self):
         self.account._balance -= self.amount
         print(f"Reverted deposit of {self.amount}. New balance: {self.account.balance}")
+        # Add the reverted deposit transaction to history
+        reverted_transaction = DepositTransaction(self.account, -self.amount)
+        self.account.history.append(reverted_transaction)
 
 
 class WithdrawTransaction(Transaction):
@@ -52,6 +55,9 @@ class WithdrawTransaction(Transaction):
         print(
             f"Reverted withdrawal of {self.amount}. New balance: {self.account.balance}"
         )
+        # Add the reverted withdrawal transaction to history
+        reverted_transaction = WithdrawTransaction(self.account, self.amount)
+        self.account.history.append(reverted_transaction)
 
 
 class BankAccount:
@@ -83,6 +89,15 @@ class BankAccount:
             print(
                 f"{t.timestamp}: {'Deposit' if isinstance(t, DepositTransaction) else 'Withdraw'} {t.amount}"
             )
+
+    def revert_last_transaction(self):
+        """Reverts the last transaction in the history."""
+        if self.history:
+            last_transaction = self.history[-1]
+            last_transaction.revert()
+            # No need to remove the transaction from history
+        else:
+            print("No transactions to revert.")
 
 
 class SavingsAccount(BankAccount):
@@ -147,5 +162,22 @@ current.withdraw(
 current.check_overdraft()
 
 # Print transaction history
+print("\nSavings Account History:")
 savings.print_history()
+
+print("\nCurrent Account History:")
+current.print_history()
+
+# Revert last transaction for both accounts
+print("\nReverting last transaction for Savings Account:")
+savings.revert_last_transaction()
+
+print("\nReverting last transaction for Current Account:")
+current.revert_last_transaction()
+
+# Print history again after reverting
+print("\nSavings Account History After Revert:")
+savings.print_history()
+
+print("\nCurrent Account History After Revert:")
 current.print_history()

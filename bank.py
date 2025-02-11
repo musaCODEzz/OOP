@@ -1,3 +1,61 @@
+from abc import ABC, abstractmethod
+from datetime import datetime
+
+
+class Transaction(ABC):
+    def __init__(self, amount, account):
+        self.amount = amount
+        self.account = account
+        self.timestamp = datetime.now()
+
+    @abstractmethod
+    def execute(self):
+        pass
+
+    @abstractmethod
+    def revert(self):
+        pass
+
+
+class DepositTransaction(Transaction):
+
+    # Handling deposits and allows reversion
+    def execute(self):
+        if self.amount <= 0:
+            raise ValueError("Deposit must be greater than 0")
+        self.account._balance += self.amount
+        self.account.history.append(self)
+        print(f"Deposited {self.amount}. New balance: {self.account.balance}")
+
+    def revert(self):
+        self.account._balance -= self.amount
+        print(f"Reverted deposit of {self.amount}. New balance: {self.account.balance}")
+        # Add the reverted deposit transaction to history
+        reverted_transaction = DepositTransaction(-self.amount, self.account)
+        self.account.history.append(reverted_transaction)
+
+
+class WithdrawTransaction(Transaction):
+    # handles withdrawals and reversions
+    def execute(self):
+        if self.amount <= 0:
+            raise ValueError("Withdrawal amount must be greater than 0")
+        if self.account._balance + self.account.overdraft_limit < self.amount:
+            raise ValueError("Insufficient balance and overdraft limit exceeded")
+        self.account._balance -= self.amount
+        self.account.history.append(self)
+        print(f"Withdrew {self.amount}. New balance: {self.account.balance}")
+
+    def revert(self):
+        self.account._balance += self.amount
+        print(
+            f"Reverted withdrawal of {self.amount}. New balance: {self.account.balance}"
+        )
+        # Add the reverted withdrawal transaction to history
+        reverted_transaction = WithdrawTransaction(self.amount, self.account)
+        self.account.history.append(reverted_transaction)
+
+
 class BankAccount:
 
     def __init__(self, owner, balance=0):
@@ -5,33 +63,37 @@ class BankAccount:
             raise ValueError("Balance cannot be negative")
         self.owner = owner
         self._balance = balance
+        self.history = []  # List to store transaction history
 
     @property
     def balance(self):
         # getter for balance
         return self._balance
 
-    @balance.setter
-    def balance(self, amount):
-        # setter for balance
-        if amount <= 0:
-            raise ValueError("Balance should be greater than 0")
-        self._balance = amount
-        print(f"Balance updated to {self._balance}")
-
     def deposit(self, amount):
-        if amount < 0:
-            raise ValueError("Deposit must be greater than 0")
-        self._balance += amount
-        print(f"Deposited {amount} in the account")
+        transaction = DepositTransaction(amount, self)
+        transaction.execute()
 
     def withdraw(self, amount):
-        if amount < 0:
-            raise ValueError("Withdrawal amount must be greater than 0")
-        if self._balance < amount:
-            raise ValueError("Insufficient balance")
-        self._balance -= amount
-        print(f"Withdrew {amount} from the account")
+        transaction = WithdrawTransaction(amount, self)
+        transaction.execute()
+
+    def print_history(self):
+
+        # diaplay transaction history
+        print(f"\nTransaction history for account: {self.owner}")
+        for t in self.history:
+            print(
+                f"{t.timestamp}: {'Deposit' if isinstance(t, DepositTransaction) else 'Withdraw'} {t.amount}"
+            )
+
+    def revert_last_transaction(self):
+        if self.history:
+            last_transaction = self.history[-1]
+            last_transaction.revert()
+            # No need to remove the transaction from history
+        else:
+            print("No transactions to revert.")
 
 
 class SavingsAccount(BankAccount):
@@ -51,53 +113,58 @@ class CurrentAccount(BankAccount):
         self.overdraft_limit = overdraft_limit
 
     def withdraw(self, amount):
-        if amount < 0:
-            raise ValueError("Withdrawal amount must be greater than 0")
-        if self._balance - amount < -self.overdraft_limit:
-            raise ValueError("Withdrawal amount exceeds the overdraft limit")
+        if self._balance + self.overdraft_limit < amount:
+            raise ValueError("Insufficient balance and overdraft limit exceeded")
         self._balance -= amount
-        print(f"Withdrew {amount} from the account")
+        transaction = WithdrawTransaction(
+            amount, self
+        )  # Create transaction for withdrawal
+        self.history.append(transaction)  # Append the transaction
+        print(f"Withdrew {amount}. New balance: {self.balance}")
+
+    def check_overdraft(self):
+        """Method specific to CurrentAccount to check overdraft."""
+        if self._balance < 0:
+            print(
+                f"Overdraft used: {-self._balance}. Overdraft limit: {self.overdraft_limit}"
+            )
 
 
-# Testing
-account = BankAccount("John", 9000)
-print(account.balance)  # ✅ Should return 9000
+# Example Usage
 
-# Update balance
-account.balance = 10000
-account.deposit(500)
-print(account.balance)
+# Savings Account
+savings = SavingsAccount("Alice", 1000, interest_rate=0.05)
+savings.deposit(500)
+savings.calculate_interest()
 
-# Withdraw money
-account.withdraw(200)
-print(account.balance)
+# Current Account with overdraft limit
+current = CurrentAccount("Bob", 500, overdraft_limit=1500)
 
-# Create a SavingsAccount instance (Fixed)
-savings_account = SavingsAccount("John", account.balance)
-savings_account.calculate_interest()  # ✅ Corrected: Applies interest
-print(f"New balance after interest: {savings_account.balance}")
+# Try withdrawing an amount within the overdraft limit
+current.withdraw(
+    600
+)  # This will work because 500 (balance) + 1500 (overdraft) is enough
 
-# Create a CurrentAccount instance
-current_account = CurrentAccount("John", 500, overdraft_limit=1000)
-print(current_account.balance)
+# Check the overdraft
+current.check_overdraft()
 
-# Test overdraft functionality
-try:
-    current_account.withdraw(1200)  # ✅ Allowed
-    print(current_account.balance)
-except ValueError as e:
-    print(e)
+# Print transaction history
+print("\nSavings Account History:")
+savings.print_history()
 
-try:
-    current_account.withdraw(400)  # ❌ Should fail
-    print(current_account.balance)
-except ValueError as e:
-    print(e)
+print("\nCurrent Account History:")
+current.print_history()
 
-# Test SavingsAccount methods
-savings_acc = SavingsAccount("John", 1000)
-print(savings_acc.balance)
-savings_acc.deposit(100)
-print(savings_acc.balance)
-savings_acc.withdraw(200)
-print(savings_acc.balance)
+# Revert last transaction for both accounts
+print("\nReverting last transaction for Savings Account:")
+savings.revert_last_transaction()
+
+print("\nReverting last transaction for Current Account:")
+current.revert_last_transaction()
+
+# Print history again after reverting
+print("\nSavings Account History After Revert:")
+savings.print_history()
+
+print("\nCurrent Account History After Revert:")
+current.print_history()
